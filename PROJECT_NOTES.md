@@ -125,6 +125,9 @@ usermod settings UI on the Config → Usermods page (`wled00/data/settings_um.ht
   `addInfo(name, 0, ...)` targets the wrong element. To relabel, walk
   `previousSibling` to the auto-generated text node and overwrite it
   (`_encSetLabel` / `_adsSetLabel` helpers).
+- Don't set `.disabled` on usermod settings fields to "grey them out": the form is a
+  plain POST, disabled fields aren't submitted, and the missing values reset to
+  defaults on save. Dim them with CSS opacity instead (`_encMarkMissing`).
 - Every field ends with a hard `<br>`. To put several dropdowns on one row,
   remove the `<br>` after each one except the last (`_encJoinRow` / `_adsJoinRow`).
 
@@ -146,7 +149,11 @@ _Last updated 2026-10-11._
 - [x] Built and flashed; boot log shows device at 0x36 / encoder 0 ready (2026-08-15)
 - [ ] Wire encoders 2–5 and confirm at 0x37–0x3A
 - [ ] Check the settings-page dropdown rows in a browser
-- [ ] Optional / deferred: NeoPixel color feedback on each encoder
+- [x] Added (2026-10-11, builds clean, **not yet tested on hardware**): encoder LEDs
+  show the palette gradient across detected encoders, LED brightness, follow strip
+  power (first encoder stays at 20%); hot-plug detection with greyed-out rows for
+  undetected encoders; per-encoder Step size (default raised 4 → 8)
+- [ ] Test the above on hardware: LED colors/order, hot-plug, settings-page row layout
 
 **ADS1115**
 - [ ] One-row "Ch1 [Pot ▾] [Dimmer ▾]" layout fix not yet re-verified in a browser

@@ -23,11 +23,18 @@ built-in pushbutton are configured independently from the WLED settings page.
 
 ## Settings (Config → Usermods)
 
-Each encoder gets one row: `Enc1 [Rotate ▾] [Short ▾] [Long ▾]`
+Each encoder gets one row: `Enc1 [Rotate ▾] [Short ▾] [Long ▾] Step [8]`
+
+Encoders that aren't currently detected are greyed out with a "not detected"
+tag. They're still editable, so you can set them up before wiring them in.
+Encoders are re-checked every second, so plugging one in or out works without
+a reboot (reload the settings page to see the updated status). The Info page
+shows "Encoders: N of 5 detected".
 
 | Control | Options | Behavior |
 |---|---|---|
-| **Rotate** | Off, Dimmer, Spd, Int, Palette, Pri Hue, Sec Hue, White | Each click nudges the current value by 4 (out of 255). Hue wraps around; others stop at min/max. Palette steps one palette per click. |
+| **Rotate** | Off, Dimmer, Spd, Int, Palette, Pri Hue, Sec Hue, White | Each click nudges the current value by the encoder's Step (out of 255). Hue wraps around; others stop at min/max. Palette always moves one palette per click. |
+| **Step** | 1–64 (default 8) | How much one click changes the value |
 | **Short press** | None, Anim Next, Anim Prev, Palette Next, Palette Prev, On/Off | Fires on release, if released within 0.8 s |
 | **Long press** | same as short press | Fires once while held, at 0.8 s (does not also fire the short press) |
 
@@ -42,6 +49,19 @@ regular WLED presets first, then enter their numbers here.
 changing hue.
 
 Changes affect the first selected segment.
+
+### Encoder LEDs
+
+Each encoder's built-in RGB LED can show the current palette.
+
+| Setting | Default | Behavior |
+|---|---|---|
+| **Encoder LEDs** | Palette gradient | *Palette gradient*: the detected encoders show the palette's gradient together. The first detected encoder shows the start of the palette and the last shows the end, spread evenly however many are connected. *Off*: all LEDs off. |
+| **LED brightness (%)** | 50 | Brightness of all encoder LEDs |
+| **LEDs follow strip power** | on | When the strip is turned off, the LEDs turn off too, except the first detected encoder, which stays on at 20% of the LED brightness |
+
+The colors follow palette changes and transitions. With multiple WLED
+segments, they show the palette of the last segment drawn.
 
 ## Build
 

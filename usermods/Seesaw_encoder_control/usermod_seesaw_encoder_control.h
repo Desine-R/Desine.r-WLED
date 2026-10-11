@@ -2,7 +2,9 @@
 
 #include "wled.h"
 #include <Adafruit_seesaw.h>
+#include <seesaw_neopixel.h>
 
+// AI: this usermod was generated with AI assistance (Claude), see PROJECT_NOTES.md
 // ---------------------------------------------------------------------------
 // Seesaw Rotary Encoder Control usermod
 //
@@ -31,6 +33,18 @@
 // the ADS1115 usermod. "White" controls only the W component of the
 // primary/secondary segment colors, independent of hue.
 //
+// Encoder detection: encoders are probed at boot and re-checked every
+// RESCAN_MS, so plugging one in (or unplugging it) is picked up without a
+// reboot. The settings page greys out the rows of encoders that aren't
+// currently detected (still editable, so they can be set up before wiring).
+//
+// Encoder LEDs: each breakout's onboard NeoPixel (seesaw pin 6) can show the
+// current palette's gradient, spread across however many encoders are
+// detected -- first detected encoder = start of the palette, last = end.
+// With "follow strip power" on, the LEDs turn off with the strip, except the
+// first detected encoder, which stays on dimmed to LED_OFF_DIM_PCT as a
+// locator.
+//
 // I2C pins (SDA/SCL) are runtime-configurable on the settings page, same as
 // the ADS1115 usermod, and default to the same GPIO32/GPIO15 pair already
 // proven on this board (GPIO12 is avoided -- flash-voltage strapping pin,
@@ -41,10 +55,11 @@
 // custom_usermods in platformio_override.ini.
 // ---------------------------------------------------------------------------
 
-// Seesaw GPIO pin the built-in pushbutton is wired to on this board (per
-// Adafruit's own example code for the I2C QT Rotary Encoder), and the
-// lowest of the 5 solder-jumper-selectable addresses (0x36 + 0/1/2/3/4).
+// Seesaw GPIO pins the built-in pushbutton and NeoPixel are wired to on this
+// board (per Adafruit's own example code for the I2C QT Rotary Encoder), and
+// the lowest of the 5 solder-jumper-selectable addresses (0x36 + 0/1/2/3/4).
 #define SS_SWITCH       24
+#define SS_NEOPIX        6
 #define BASE_ENCODER_ADDR 0x36
 
 // defaults -- see ADS1115_dual_control's header comment for why GPIO32/15
@@ -54,9 +69,16 @@
 #define DEFAULT_SCL_PIN   15
 
 #define NOTIFY_INTERVAL_MS   150
-#define STEP_8BIT            4     // per-detent step for 0-255 attributes
+#define DEFAULT_STEP          8     // per-detent step for 0-255 attributes (configurable per encoder)
+#define MAX_STEP             64
 #define LONG_PRESS_MS         800
 #define DEBOUNCE_MS            40
+#define RESCAN_MS            1000  // how often to re-check which encoders are connected
+#define MAX_SANE_DELTA         64  // larger jumps are treated as a bad read (e.g. mid-unplug)
+
+#define LED_UPDATE_MS          50  // encoder LED refresh rate (only changed colors are sent)
+#define LED_OFF_DIM_PCT        20  // first encoder's LED level while the strip is off
+#define DEFAULT_LED_BRI_PCT    50
 
 class SeesawEncoderControlUsermod : public Usermod {
   public:
@@ -68,6 +90,11 @@ class SeesawEncoderControlUsermod : public Usermod {
     void loop() override {
       if (!initDone || !pinsValid || strip.isUpdating()) return;
 
+      if (millis() - lastRescan >= RESCAN_MS) {
+        rescanEncoders();
+        lastRescan = millis();
+      }
+
       for (uint8_t i = 0; i < ENCODER_COUNT; i++) {
         if (!encoders[i].ok) continue;
         handleEncoderRotation(i);
@@ -75,6 +102,20 @@ class SeesawEncoderControlUsermod : public Usermod {
       }
 
       maybeNotify();
+
+      if (millis() - lastLedUpdate >= LED_UPDATE_MS) {
+        updateEncoderLeds();
+        lastLedUpdate = millis();
+      }
+    }
+
+    // Shows "Encoders: N of 5 detected" on WLED's Info page.
+    void addToJsonInfo(JsonObject& root) override {
+      JsonObject user = root["u"];
+      if (user.isNull()) user = root.createNestedObject("u");
+      JsonArray info = user.createNestedArray(F("Encoders"));
+      info.add(detectedCount());
+      info.add(F(" of 5 detected"));
     }
 
     // ---- Usermod settings page ----
@@ -87,6 +128,7 @@ class SeesawEncoderControlUsermod : public Usermod {
     // *name* -- an array would only ever yield one dropdown (same gotcha
     // documented in the ADS1115 usermod's per-channel mode/action fields).
     // "fav": up to MAX_FAVORITES WLED preset numbers (0 = unused slot).
+    // "led_mode" / "led_bri" / "led_power": encoder LED settings.
     void addToConfig(JsonObject& root) override {
       JsonObject top = root.createNestedObject(FPSTR(_name));
       JsonArray pinArray = top.createNestedArray("pin");
@@ -102,10 +144,15 @@ class SeesawEncoderControlUsermod : public Usermod {
         top[String("rot") + i] = (String)rotateAction[i];
         top[String("sp") + i] = (String)shortPressAction[i];
         top[String("lp") + i] = (String)longPressAction[i];
+        top[String("st") + i] = stepSize[i];
       }
 
       JsonArray favArray = top.createNestedArray("fav");
       for (uint8_t i = 0; i < MAX_FAVORITES; i++) favArray.add(favoritePresets[i]);
+
+      top["led_mode"] = (String)ledMode;
+      top["led_bri"] = ledBriPct;
+      top["led_power"] = ledFollowPower;
     }
 
     bool readFromConfig(JsonObject& root) override {
@@ -119,15 +166,27 @@ class SeesawEncoderControlUsermod : public Usermod {
       sdaPin = newSda; sclPin = newScl;
 
       for (uint8_t i = 0; i < ENCODER_COUNT; i++) {
+        uint8_t oldAddr = encoderAddr[i];
         configComplete &= getJsonValue(top["addr"][i], encoderAddr[i], DEFAULT_ENCODER_ADDR[i]);
+        // address changed at runtime: drop the old connection so the next
+        // rescan re-initializes this slot at the new address
+        if (initDone && encoderAddr[i] != oldAddr) encoders[i].ok = false;
         configComplete &= getJsonValue(top[String("rot") + i], rotateAction[i], DEFAULT_ROTATE_ACTION[i]);
         configComplete &= getJsonValue(top[String("sp") + i], shortPressAction[i], (uint8_t)PRESS_NONE);
         configComplete &= getJsonValue(top[String("lp") + i], longPressAction[i], (uint8_t)PRESS_ANIM_NEXT);
+        configComplete &= getJsonValue(top[String("st") + i], stepSize[i], (uint8_t)DEFAULT_STEP);
+        stepSize[i] = constrain(stepSize[i], 1, MAX_STEP);
       }
 
       for (uint8_t i = 0; i < MAX_FAVORITES; i++) {
         configComplete &= getJsonValue(top["fav"][i], favoritePresets[i], (uint8_t)0);
       }
+
+      configComplete &= getJsonValue(top["led_mode"], ledMode, (uint8_t)LED_PALETTE);
+      configComplete &= getJsonValue(top["led_bri"], ledBriPct, (uint8_t)DEFAULT_LED_BRI_PCT);
+      configComplete &= getJsonValue(top["led_power"], ledFollowPower, true);
+      if (ledBriPct > 100) ledBriPct = 100;
+      invalidateLeds(); // push new LED settings on the next refresh
 
       // I2C pins can't be re-pointed live once Wire.begin() has run -- ask
       // WLED to reboot so new pins take effect cleanly.
@@ -138,15 +197,17 @@ class SeesawEncoderControlUsermod : public Usermod {
       return configComplete;
     }
 
-    // Builds the per-pin labels, the address labels for each encoder, and
-    // the rotate/short-press/long-press dropdown trio for each encoder.
+    // Builds the per-pin labels, the address labels for each encoder, the
+    // rotate/short-press/long-press dropdown trio for each encoder, and the
+    // encoder LED settings. Encoders not detected right now are greyed out.
     void appendConfigData(Print& s) override {
       printPinLabel(s, 0, "SDA (I2C)");
       printPinLabel(s, 1, "SCL (I2C)");
 
       for (uint8_t i = 0; i < ENCODER_COUNT; i++) {
         s.print(F("addInfo('")); s.print(FPSTR(_name)); s.print(F(":addr[]',")); s.print(i);
-        s.print(F(",'Encoder ")); s.print(i + 1); s.print(F(" I2C addr (0x36-0x3A)');"));
+        s.print(F(",'Encoder ")); s.print(i + 1); s.print(F(" I2C addr (0x36-0x3A)"));
+        s.print(encoders[i].ok ? F(" - detected');") : F(" - not detected');"));
       }
 
       printSharedOptionListsJs(s);
@@ -156,6 +217,8 @@ class SeesawEncoderControlUsermod : public Usermod {
         s.print(F("addInfo('")); s.print(FPSTR(_name)); s.print(F(":fav[]',")); s.print(i);
         s.print(F(",'Anim ")); s.print(i + 1); s.print(F(" (preset #)');"));
       }
+
+      printLedSettingsJs(s);
     }
 
   private:
@@ -187,6 +250,9 @@ class SeesawEncoderControlUsermod : public Usermod {
       PRESS_PALETTE_NEXT, PRESS_PALETTE_PREV, PRESS_TOGGLE_POWER
     };
 
+    // Encoder LED mode IDs (global, applies to all encoders).
+    enum : uint8_t { LED_OFF = 0, LED_PALETTE };
+
     // Defaults spread rotate across the first 5 attributes so out-of-the-
     // box each encoder does something different; short press defaults to
     // doing nothing until explicitly configured, long press defaults to
@@ -197,9 +263,21 @@ class SeesawEncoderControlUsermod : public Usermod {
     uint8_t longPressAction[ENCODER_COUNT] = {
       PRESS_ANIM_NEXT, PRESS_ANIM_NEXT, PRESS_ANIM_NEXT, PRESS_ANIM_NEXT, PRESS_ANIM_NEXT
     };
+    // how much one detent changes a 0-255 attribute (Palette always steps by 1)
+    uint8_t stepSize[ENCODER_COUNT] = { DEFAULT_STEP, DEFAULT_STEP, DEFAULT_STEP, DEFAULT_STEP, DEFAULT_STEP };
+
+    uint8_t ledMode = LED_PALETTE;
+    uint8_t ledBriPct = DEFAULT_LED_BRI_PCT;
+    bool ledFollowPower = true;
+
+    // sentinel for "LED state unknown, push on next refresh" -- palette
+    // colors never use the top byte, so this can't collide with a real color
+    static const uint32_t LED_UNKNOWN = 0xFFFFFFFF;
 
     struct EncoderUnit {
-      Adafruit_seesaw ss;
+      // seesaw_NeoPixel extends Adafruit_seesaw, so one object drives both
+      // the encoder/button and the onboard NeoPixel (1 pixel, seesaw pin 6)
+      seesaw_NeoPixel ss{1, SS_NEOPIX, NEO_GRB + NEO_KHZ800};
       bool ok = false;
       int32_t lastPosition = 0;
       bool haveLastPosition = false;
@@ -208,6 +286,7 @@ class SeesawEncoderControlUsermod : public Usermod {
       unsigned long lastButtonChange = 0;
       unsigned long pressStart = 0;
       bool longFired = false;
+      uint32_t lastLedColor = LED_UNKNOWN;
     };
     EncoderUnit encoders[ENCODER_COUNT];
 
@@ -227,6 +306,8 @@ class SeesawEncoderControlUsermod : public Usermod {
     unsigned long lastNotify = 0;
     bool pendingStateNotify = false;
     bool pendingColorNotify = false;
+    unsigned long lastRescan = 0;
+    unsigned long lastLedUpdate = 0;
 
     void allocateAndBegin() {
       pinsValid = true;
@@ -249,8 +330,7 @@ class SeesawEncoderControlUsermod : public Usermod {
       Serial.println(F("[SeesawEncoderControl] scanning I2C bus..."));
       uint8_t foundCount = 0;
       for (uint8_t addr = 1; addr < 127; addr++) {
-        Wire.beginTransmission(addr);
-        if (Wire.endTransmission() == 0) {
+        if (i2cPresent(addr)) {
           Serial.print(F("[SeesawEncoderControl] found device at 0x"));
           Serial.println(addr, HEX);
           foundCount++;
@@ -260,16 +340,61 @@ class SeesawEncoderControlUsermod : public Usermod {
       else { Serial.print(F("[SeesawEncoderControl] scan complete -- ")); Serial.print(foundCount); Serial.println(F(" device(s) found")); }
 
       for (uint8_t i = 0; i < ENCODER_COUNT; i++) {
-        encoders[i].ok = encoders[i].ss.begin(encoderAddr[i]);
-        if (encoders[i].ok) {
-          encoders[i].ss.pinMode(SS_SWITCH, INPUT_PULLUP);
-          encoders[i].lastPosition = encoders[i].ss.getEncoderPosition();
-          encoders[i].haveLastPosition = true;
-          Serial.print(F("[SeesawEncoderControl] encoder ")); Serial.print(i); Serial.println(F(" ready"));
-        } else {
+        // only call begin() on addresses that answer: begin() retries with
+        // delays and blocks ~100ms when nothing is there
+        if (i2cPresent(encoderAddr[i])) initEncoder(i);
+        if (!encoders[i].ok) {
           Serial.print(F("[SeesawEncoderControl] encoder ")); Serial.print(i); Serial.println(F(" not found"));
         }
       }
+      lastRescan = millis();
+    }
+
+    // Fast presence check: a bare address ping, no retries or delays.
+    static bool i2cPresent(uint8_t addr) {
+      Wire.beginTransmission(addr);
+      return Wire.endTransmission() == 0;
+    }
+
+    void initEncoder(uint8_t i) {
+      EncoderUnit &e = encoders[i];
+      e.ok = e.ss.begin(encoderAddr[i]);
+      if (!e.ok) return;
+      e.ss.pinMode(SS_SWITCH, INPUT_PULLUP);
+      e.lastPosition = e.ss.getEncoderPosition();
+      e.haveLastPosition = true;
+      e.lastButtonRaw = HIGH;
+      e.buttonDebounced = HIGH;
+      e.longFired = false;
+      invalidateLeds(); // detected count changed, so every LED's palette position may shift
+      Serial.print(F("[SeesawEncoderControl] encoder ")); Serial.print(i); Serial.println(F(" ready"));
+    }
+
+    // Hot-plug support: re-initializes encoders that have appeared and
+    // drops ones that stopped answering. Pings only (fast); begin() runs
+    // only for a newly answering address.
+    void rescanEncoders() {
+      for (uint8_t i = 0; i < ENCODER_COUNT; i++) {
+        bool present = i2cPresent(encoderAddr[i]);
+        if (encoders[i].ok && !present) {
+          encoders[i].ok = false;
+          encoders[i].haveLastPosition = false;
+          invalidateLeds();
+          Serial.print(F("[SeesawEncoderControl] encoder ")); Serial.print(i); Serial.println(F(" disconnected"));
+        } else if (!encoders[i].ok && present) {
+          initEncoder(i);
+        }
+      }
+    }
+
+    uint8_t detectedCount() const {
+      uint8_t n = 0;
+      for (uint8_t i = 0; i < ENCODER_COUNT; i++) if (encoders[i].ok) n++;
+      return n;
+    }
+
+    void invalidateLeds() {
+      for (uint8_t i = 0; i < ENCODER_COUNT; i++) encoders[i].lastLedColor = LED_UNKNOWN;
     }
 
     void handleEncoderRotation(uint8_t i) {
@@ -279,7 +404,10 @@ class SeesawEncoderControlUsermod : public Usermod {
       int32_t delta = pos - e.lastPosition;
       if (delta == 0) return;
       e.lastPosition = pos;
-      applyRotateDelta(rotateAction[i], delta);
+      // an implausibly large jump means a bad read (e.g. encoder being
+      // unplugged before the next rescan notices) -- re-baseline, don't apply
+      if (delta > MAX_SANE_DELTA || delta < -MAX_SANE_DELTA) return;
+      applyRotateDelta(rotateAction[i], delta, stepSize[i]);
     }
 
     // Edge-triggered debounce, same pattern as the ADS1115 usermod's
@@ -310,29 +438,71 @@ class SeesawEncoderControlUsermod : public Usermod {
       }
     }
 
+    // Spreads the current palette across the detected encoders: the k-th
+    // detected encoder (of N) samples palette index k*240/(N-1). 240, not
+    // 255, is the last entry of a 16-entry palette -- going higher would
+    // blend back toward the first entry (same reason WLED's own
+    // color_from_palette() scales to 240 when not wrapping).
+    //
+    // Colors come from Segment::getCurrentPalette(): the palette WLED last
+    // rendered with, so it already accounts for palette transitions, the
+    // effect-dependent "Default" palette, and color-based palettes. With
+    // multiple segments it reflects the last segment drawn.
+    //
+    // Only colors that changed since the last refresh are sent over I2C.
+    void updateEncoderLeds() {
+      uint8_t n = detectedCount();
+      if (n == 0) return;
+      bool stripOff = (bri == 0);
+      const CRGBPalette16 &pal = Segment::getCurrentPalette();
+
+      uint8_t k = 0; // position among detected encoders
+      for (uint8_t i = 0; i < ENCODER_COUNT; i++) {
+        EncoderUnit &e = encoders[i];
+        if (!e.ok) continue;
+
+        uint8_t pct = ledBriPct;
+        if (ledFollowPower && stripOff) pct = (k == 0) ? (uint16_t)ledBriPct * LED_OFF_DIM_PCT / 100 : 0;
+
+        uint32_t color = 0;
+        if (ledMode == LED_PALETTE && pct > 0) {
+          uint8_t index = (n > 1) ? (uint16_t)k * 240 / (n - 1) : 0;
+          uint32_t c = ColorFromPalette(pal, index, 255, LINEARBLEND);
+          color = RGBW32((uint16_t)R(c) * pct / 100, (uint16_t)G(c) * pct / 100, (uint16_t)B(c) * pct / 100, 0);
+        }
+
+        if (color != e.lastLedColor) {
+          e.ss.setPixelColor(0, R(color), G(color), B(color));
+          e.ss.show();
+          e.lastLedColor = color;
+        }
+        k++;
+      }
+    }
+
     // Nudges the live value of whichever attribute is assigned to
-    // rotation, by delta detents -- unlike the ADS1115 pot usermod, there's
-    // no absolute position to map, so every attribute is read-modify-
-    // written from its current value. Hue wraps (it's a color wheel);
-    // everything else clamps.
-    void applyRotateDelta(uint8_t action, int32_t delta) {
+    // rotation, by delta detents x step -- unlike the ADS1115 pot usermod,
+    // there's no absolute position to map, so every attribute is read-
+    // modify-written from its current value. Hue wraps (it's a color
+    // wheel); everything else clamps. Palette ignores step (1 per detent).
+    void applyRotateDelta(uint8_t action, int32_t delta, uint8_t step) {
       if (delta == 0 || action == ROT_OFF) return;
       Segment& seg = strip.getSegment(strip.getFirstSelectedSegId());
       switch (action) {
         case ROT_BRI: {
-          int v = (int)bri + delta * STEP_8BIT;
+          int v = (int)bri + delta * step;
           bri = (uint8_t)constrain(v, 0, 255);
           pendingStateNotify = true;
           break;
         }
         case ROT_SPEED: {
-          int v = (int)seg.speed + delta * STEP_8BIT;
+          int v = (int)seg.speed + delta * step;
           seg.speed = (uint8_t)constrain(v, 0, 255);
           pendingStateNotify = true;
           break;
         }
         case ROT_INTENSITY: {
-          int v = (int)seg.intensity + delta * STEP_8BIT;
+          int v = (int)seg.intensity + delta * step;
           seg.intensity = (uint8_t)constrain(v, 0, 255);
           pendingStateNotify = true;
           break;
@@ -348,21 +518,21 @@ class SeesawEncoderControlUsermod : public Usermod {
           break;
         }
         case ROT_HUE1: {
-          int v = (((int)primaryHue + (int)delta * STEP_8BIT) % 256 + 256) % 256;
+          int v = (((int)primaryHue + (int)delta * step) % 256 + 256) % 256;
           primaryHue = (uint8_t)v;
           applyRGBWSlot(0);
           pendingColorNotify = true;
           break;
         }
         case ROT_HUE2: {
-          int v = (((int)secondaryHue + (int)delta * STEP_8BIT) % 256 + 256) % 256;
+          int v = (((int)secondaryHue + (int)delta * step) % 256 + 256) % 256;
           secondaryHue = (uint8_t)v;
           applyRGBWSlot(1);
           pendingColorNotify = true;
           break;
         }
         case ROT_WHITE: {
-          int v = (int)whiteLevel + delta * STEP_8BIT;
+          int v = (int)whiteLevel + delta * step;
           whiteLevel = (uint8_t)constrain(v, 0, 255);
           applyRGBWSlot(0);
           applyRGBWSlot(1);
@@ -459,6 +629,11 @@ class SeesawEncoderControlUsermod : public Usermod {
     // <br> -- remove the ones between the three dropdowns so they render
     // on one row (both fixes ported from ADS1115_dual_control's
     // _adsSetLabel/_adsJoinRow).
+    //
+    // _encMarkMissing greys out an undetected encoder's row. It only dims
+    // the controls (doesn't set .disabled): the settings form is a plain
+    // POST, and disabled fields aren't submitted, which would reset that
+    // encoder's saved settings to defaults on every save.
     void printSharedOptionListsJs(Print& s) {
       s.print(F(
         "var _encRotOpts=[['Off',0],['Dimmer',1],['Spd',2],['Int',3],"
@@ -476,11 +651,25 @@ class SeesawEncoderControlUsermod : public Usermod {
         "function _encFillOpts(sel,opts){"
           "for(var i=0;i<opts.length;i++)addOption(sel,opts[i][0],opts[i][1]);"
         "}"
+        "function _encNote(el,text){"
+          "var t=document.createElement('span');t.textContent=text;"
+          "t.style.cssText='opacity:.6;font-style:italic';"
+          "el.parentNode.insertBefore(t,el.nextSibling);"
+        "}"
+        "function _encMarkMissing(els){"
+          "for(var i=0;i<els.length;i++)els[i].style.opacity='.4';"
+          "_encNote(els[els.length-1],' not detected');"
+        "}"
+        "function _encInput(fld){"
+          "var a=document.getElementsByName('SeesawEncoderControl:'+fld);"
+          "for(var i=0;i<a.length;i++)if(a[i].type!=='hidden')return a[i];"
+          "return null;"
+        "}"
       ));
     }
 
-    // Rotate + short-press + long-press dropdown trio for one encoder, on
-    // one row reading "Enc1 [Rotate v] [Short v] [Long v]".
+    // Rotate + short-press + long-press dropdowns plus step size for one
+    // encoder, on one row reading "Enc1 [Rotate v] [Short v] [Long v] Step [8]".
     void printEncoderDropdowns(Print& s, uint8_t idx) {
       s.print(F("(function(){"));
       s.print(F("var r=addDropdown('")); s.print(FPSTR(_name));
@@ -498,8 +687,30 @@ class SeesawEncoderControlUsermod : public Usermod {
       s.print(F("var lp=addDropdown('")); s.print(FPSTR(_name));
       s.print(F("','lp")); s.print(idx); s.print(F("');"));
       s.print(F("_encSetLabel(lp,'');"));
+      s.print(F("_encJoinRow(lp);"));
       s.print(F("_encFillOpts(lp,_encPressOpts);"));
+
+      s.print(F("var st=_encInput('st")); s.print(idx); s.print(F("');"));
+      s.print(F("if(st){_encSetLabel(st,' Step ');st.min=1;st.max=")); s.print(MAX_STEP);
+      s.print(F(";st.step=1;st.style.width='4em';}"));
+      if (!encoders[idx].ok) s.print(F("_encMarkMissing(st?[r,sp,lp,st]:[r,sp,lp]);"));
       s.print(F("})();"));
+    }
+
+    // Encoder LED settings: mode dropdown, brightness %, follow-power checkbox.
+    void printLedSettingsJs(Print& s) {
+      s.print(F(
+        "(function(){"
+          "var m=addDropdown('SeesawEncoderControl','led_mode');"
+          "if(m){_encSetLabel(m,'Encoder LEDs ');"
+            "addOption(m,'Off',0);addOption(m,'Palette gradient',1);}"
+          "var b=_encInput('led_bri');"
+          "if(b){_encSetLabel(b,'LED brightness (%) ');b.min=0;b.max=100;b.step=1;}"
+          "var p=_encInput('led_power');"
+          "if(p){_encSetLabel(p,'LEDs follow strip power ');"
+            "_encNote(p,' (first encoder stays on at 20% when the strip is off)');}"
+        "})();"
+      ));
     }
 };
 
