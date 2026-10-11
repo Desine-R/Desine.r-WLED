@@ -125,19 +125,19 @@ class SeesawEncoderControlUsermod : public Usermod {
     // SUBPAGE_UM handler in set.cpp). Headings are renamed in JS
     // (e.g. "Enc1" -> "Encoder - 1").
     //
-    //   "pin":        [SDA, SCL] (top level, not a section)
     //   "enc1".."enc5": { addr, rot, sp, lp, st } per encoder
     //   "leds":       { mode, bri, power } encoder LED settings
     //   "favorites":  { preset: [MAX_FAVORITES preset numbers, 0 = unused] }
+    //   "i2c":        { pin: [SDA, SCL] } -- deliberately last, so the
+    //                 hardware pins aren't the first thing someone changes
+    //
+    // Sections render in the order they're added here.
     //
     // Dropdown values are stored as Strings: required for the settings-page
     // dropdown to show the saved value as selected (same pattern as
     // ADS1115_dual_control).
     void addToConfig(JsonObject& root) override {
       JsonObject top = root.createNestedObject(FPSTR(_name));
-      JsonArray pinArray = top.createNestedArray("pin");
-      pinArray.add(sdaPin);
-      pinArray.add(sclPin);
 
       for (uint8_t i = 0; i < ENCODER_COUNT; i++) {
         JsonObject enc = top.createNestedObject(String("enc") + (i + 1));
@@ -156,6 +156,11 @@ class SeesawEncoderControlUsermod : public Usermod {
       JsonObject favs = top.createNestedObject("favorites");
       JsonArray favArray = favs.createNestedArray("preset");
       for (uint8_t i = 0; i < MAX_FAVORITES; i++) favArray.add(favoritePresets[i]);
+
+      JsonObject i2c = top.createNestedObject("i2c");
+      JsonArray pinArray = i2c.createNestedArray("pin");
+      pinArray.add(sdaPin);
+      pinArray.add(sclPin);
     }
 
     bool readFromConfig(JsonObject& root) override {
@@ -163,8 +168,8 @@ class SeesawEncoderControlUsermod : public Usermod {
       bool configComplete = !top.isNull();
 
       int8_t newSda = sdaPin, newScl = sclPin;
-      configComplete &= getJsonValue(top["pin"][0], newSda, DEFAULT_SDA_PIN);
-      configComplete &= getJsonValue(top["pin"][1], newScl, DEFAULT_SCL_PIN);
+      configComplete &= getJsonValue(top["i2c"]["pin"][0], newSda, DEFAULT_SDA_PIN);
+      configComplete &= getJsonValue(top["i2c"]["pin"][1], newScl, DEFAULT_SCL_PIN);
       bool pinsChanged = (newSda != sdaPin) || (newScl != sclPin);
       sdaPin = newSda; sclPin = newScl;
 
@@ -204,17 +209,15 @@ class SeesawEncoderControlUsermod : public Usermod {
       return configComplete;
     }
 
-    // Builds the settings page: I2C pin labels, then one titled section per
-    // encoder ("Encoder - 1" ...), the encoder LED section, and the
-    // favorites section last. Encoders not detected right now are greyed out.
+    // Builds the settings page: one titled section per encoder
+    // ("Encoder - 1" ...), the encoder LED section, favorites, and the I2C
+    // pins last. Encoders not detected right now are greyed out.
     void appendConfigData(Print& s) override {
-      printPinLabel(s, 0, "SDA (I2C)");
-      printPinLabel(s, 1, "SCL (I2C)");
-
       printSharedJs(s);
       for (uint8_t i = 0; i < ENCODER_COUNT; i++) printEncoderSection(s, i);
       printLedSectionJs(s);
       printFavoritesSectionJs(s);
+      printPinSectionJs(s);
     }
 
   private:
@@ -612,9 +615,18 @@ class SeesawEncoderControlUsermod : public Usermod {
       lastNotify = millis();
     }
 
-    void printPinLabel(Print& s, uint8_t idx, const char* label) {
-      s.print(F("addInfo('")); s.print(FPSTR(_name)); s.print(F(":pin[]',")); s.print(idx);
-      s.print(F(",'")); s.print(label); s.print(F("');"));
+    // I2C pin section (last on the page). WLED's pinDD() converts these
+    // number inputs to GPIO dropdowns after this runs (it matches any
+    // field name containing "pin"); the labels and title stay in place.
+    void printPinSectionJs(Print& s) {
+      s.print(F(
+        "(function(){"
+          "var a=document.getElementsByName('SeesawEncoderControl:i2c:pin[]');"
+          "if(!a.length)return;"
+          "_encSetLabel(a[0],'SDA ');if(a[1])_encSetLabel(a[1],'SCL ');"
+          "_encTitle(a[0],'I2C Pins (advanced)',' only change if the encoders are rewired; the device reboots');"
+        "})();"
+      ));
     }
 
     // Declares the option lists and DOM helpers once, shared by all

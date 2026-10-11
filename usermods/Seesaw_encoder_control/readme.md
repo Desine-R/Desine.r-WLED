@@ -17,15 +17,16 @@ built-in pushbutton are configured independently from the WLED settings page.
   | 4 | 0x39 | A0 + A1 |
   | 5 | 0x3A | A2 |
 
-- Default I2C pins: SDA = GPIO32, SCL = GPIO15 (changeable on the settings page;
-  the device reboots to apply). Avoid GPIO12 on ESP32 — it's a boot strapping pin
+- Default I2C pins: SDA = GPIO32, SCL = GPIO15 (changeable in the "I2C Pins
+  (advanced)" section at the bottom of the settings page; the device reboots to apply). Avoid GPIO12 on ESP32 — it's a boot strapping pin
   and an I2C pull-up will stop the board from booting.
 
 ## Settings (Config → Usermods)
 
 The page is split into sections, each with a heading and a divider line:
-I2C pins at the top, then **Encoder - 1** … **Encoder - 5**, **Encoder LEDs**,
-and **Favorites** last. Each encoder section has: I2C address (dropdown, shows
+**Encoder - 1** … **Encoder - 5**, **Encoder LEDs**, **Favorites**, and
+**I2C Pins (advanced)** at the very bottom, so the hardware pins aren't the
+first thing someone changes. Each encoder section has: I2C address (dropdown, shows
 which jumpers to bridge), Rotate, Short press, Long press, and Step.
 
 Each encoder heading says "detected" or "not detected". Undetected encoders are

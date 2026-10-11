@@ -158,8 +158,8 @@ _Last updated 2026-10-11._
   power (first encoder stays at 20%); hot-plug detection with greyed-out rows for
   undetected encoders; per-encoder Step size (default raised 4 → 8)
 - [x] Settings page reorganized into titled sections (Encoder - 1..5, Encoder LEDs,
-  Favorites last); favorites raised to 13; I2C address is now a dropdown.
-  Config keys changed (nested `enc1`..`enc5` / `leds` / `favorites` objects), so
+  Favorites, then "I2C Pins (advanced)" at the very bottom per client request); favorites raised to 13; I2C address is now a dropdown.
+  Config keys changed (nested `enc1`..`enc5` / `leds` / `favorites` / `i2c` objects), so
   settings saved by older builds revert to defaults once. Page layout verified
   in a browser mockup built from WLED's own settings_um.htm functions.
 - [ ] Test the above on hardware: LED colors/order, hot-plug, settings page on the device
