@@ -117,6 +117,10 @@ to compiled-in defaults and a normal upload is fine.
 Learned building the per-channel/per-encoder dropdown rows. Relevant to any
 usermod settings UI on the Config → Usermods page (`wled00/data/settings_um.htm`):
 
+- Nested objects in a usermod's config (one level deep) become titled sections
+  with a divider line; field names become `Usermod:section:field`, and the save
+  handler in `set.cpp` supports that. Rename headings in JS by walking back from
+  a field to the `<p>` (`_encTitle`).
 - `addDropdown()` converts one input per field *name*. For N independent
   dropdowns, use N separately named fields (`rot0`..`rot4`), not an array.
 - Save dropdown values as strings in `addToConfig()` (`(String)value`) or the
@@ -153,7 +157,12 @@ _Last updated 2026-10-11._
   show the palette gradient across detected encoders, LED brightness, follow strip
   power (first encoder stays at 20%); hot-plug detection with greyed-out rows for
   undetected encoders; per-encoder Step size (default raised 4 → 8)
-- [ ] Test the above on hardware: LED colors/order, hot-plug, settings-page row layout
+- [x] Settings page reorganized into titled sections (Encoder - 1..5, Encoder LEDs,
+  Favorites last); favorites raised to 13; I2C address is now a dropdown.
+  Config keys changed (nested `enc1`..`enc5` / `leds` / `favorites` objects), so
+  settings saved by older builds revert to defaults once. Page layout verified
+  in a browser mockup built from WLED's own settings_um.htm functions.
+- [ ] Test the above on hardware: LED colors/order, hot-plug, settings page on the device
 
 **ADS1115**
 - [ ] One-row "Ch1 [Pot ▾] [Dimmer ▾]" layout fix not yet re-verified in a browser

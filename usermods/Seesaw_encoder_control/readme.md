@@ -23,10 +23,13 @@ built-in pushbutton are configured independently from the WLED settings page.
 
 ## Settings (Config → Usermods)
 
-Each encoder gets one row: `Enc1 [Rotate ▾] [Short ▾] [Long ▾] Step [8]`
+The page is split into sections, each with a heading and a divider line:
+I2C pins at the top, then **Encoder - 1** … **Encoder - 5**, **Encoder LEDs**,
+and **Favorites** last. Each encoder section has: I2C address (dropdown, shows
+which jumpers to bridge), Rotate, Short press, Long press, and Step.
 
-Encoders that aren't currently detected are greyed out with a "not detected"
-tag. They're still editable, so you can set them up before wiring them in.
+Each encoder heading says "detected" or "not detected". Undetected encoders are
+greyed out. They're still editable, so you can set them up before wiring them in.
 Encoders are re-checked every second, so plugging one in or out works without
 a reboot (reload the settings page to see the updated status). The Info page
 shows "Encoders: N of 5 detected".
@@ -41,8 +44,8 @@ shows "Encoders: N of 5 detected".
 Defaults: encoders 1–5 rotate Dimmer / Spd / Int / Pri Hue / Sec Hue; short
 press does nothing; long press = Anim Next.
 
-**Anim Next/Prev** steps through a list of up to 8 WLED preset numbers ("Anim 1"
-… "Anim 8" fields below the encoders; 0 = unused). Save your favorite looks as
+**Anim Next/Prev** steps through a list of up to 13 WLED preset numbers ("Anim 1"
+… "Anim 13" in the Favorites section; 0 = unused). Save your favorite looks as
 regular WLED presets first, then enter their numbers here.
 
 **White** adjusts only the W channel of the primary and secondary colors, without

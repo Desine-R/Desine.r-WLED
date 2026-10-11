@@ -119,40 +119,43 @@ class SeesawEncoderControlUsermod : public Usermod {
     }
 
     // ---- Usermod settings page ----
-    // "pin" array: index 0 = SDA, 1 = SCL.
-    // "addr[]": each encoder's I2C address (plain number inputs, so a
-    // single array is fine here -- no dropdown-conversion needed).
-    // "rot0".."rot4" / "sp0".."sp4" / "lp0".."lp4": each encoder's rotate /
-    // short-press / long-press action -- individually named fields (not
-    // arrays), since addDropdown() only converts one input per field
-    // *name* -- an array would only ever yield one dropdown (same gotcha
-    // documented in the ADS1115 usermod's per-channel mode/action fields).
-    // "fav": up to MAX_FAVORITES WLED preset numbers (0 = unused slot).
-    // "led_mode" / "led_bri" / "led_power": encoder LED settings.
+    // Each nested object below becomes its own section on the settings
+    // page: WLED draws a divider line and a heading for it (one nesting
+    // level is supported, see addField() in settings_um.htm and the
+    // SUBPAGE_UM handler in set.cpp). Headings are renamed in JS
+    // (e.g. "Enc1" -> "Encoder - 1").
+    //
+    //   "pin":        [SDA, SCL] (top level, not a section)
+    //   "enc1".."enc5": { addr, rot, sp, lp, st } per encoder
+    //   "leds":       { mode, bri, power } encoder LED settings
+    //   "favorites":  { preset: [MAX_FAVORITES preset numbers, 0 = unused] }
+    //
+    // Dropdown values are stored as Strings: required for the settings-page
+    // dropdown to show the saved value as selected (same pattern as
+    // ADS1115_dual_control).
     void addToConfig(JsonObject& root) override {
       JsonObject top = root.createNestedObject(FPSTR(_name));
       JsonArray pinArray = top.createNestedArray("pin");
       pinArray.add(sdaPin);
       pinArray.add(sclPin);
 
-      JsonArray addrArray = top.createNestedArray("addr");
-      for (uint8_t i = 0; i < ENCODER_COUNT; i++) addrArray.add(encoderAddr[i]);
-
       for (uint8_t i = 0; i < ENCODER_COUNT; i++) {
-        // cast to String: required for the settings-page dropdown to show
-        // the saved value as selected (same pattern as ADS1115_dual_control).
-        top[String("rot") + i] = (String)rotateAction[i];
-        top[String("sp") + i] = (String)shortPressAction[i];
-        top[String("lp") + i] = (String)longPressAction[i];
-        top[String("st") + i] = stepSize[i];
+        JsonObject enc = top.createNestedObject(String("enc") + (i + 1));
+        enc["addr"] = (String)encoderAddr[i];
+        enc["rot"] = (String)rotateAction[i];
+        enc["sp"] = (String)shortPressAction[i];
+        enc["lp"] = (String)longPressAction[i];
+        enc["st"] = stepSize[i];
       }
 
-      JsonArray favArray = top.createNestedArray("fav");
-      for (uint8_t i = 0; i < MAX_FAVORITES; i++) favArray.add(favoritePresets[i]);
+      JsonObject leds = top.createNestedObject("leds");
+      leds["mode"] = (String)ledMode;
+      leds["bri"] = ledBriPct;
+      leds["power"] = ledFollowPower;
 
-      top["led_mode"] = (String)ledMode;
-      top["led_bri"] = ledBriPct;
-      top["led_power"] = ledFollowPower;
+      JsonObject favs = top.createNestedObject("favorites");
+      JsonArray favArray = favs.createNestedArray("preset");
+      for (uint8_t i = 0; i < MAX_FAVORITES; i++) favArray.add(favoritePresets[i]);
     }
 
     bool readFromConfig(JsonObject& root) override {
@@ -166,25 +169,29 @@ class SeesawEncoderControlUsermod : public Usermod {
       sdaPin = newSda; sclPin = newScl;
 
       for (uint8_t i = 0; i < ENCODER_COUNT; i++) {
+        JsonObject enc = top[String("enc") + (i + 1)];
         uint8_t oldAddr = encoderAddr[i];
-        configComplete &= getJsonValue(top["addr"][i], encoderAddr[i], DEFAULT_ENCODER_ADDR[i]);
+        configComplete &= getJsonValue(enc["addr"], encoderAddr[i], DEFAULT_ENCODER_ADDR[i]);
         // address changed at runtime: drop the old connection so the next
         // rescan re-initializes this slot at the new address
         if (initDone && encoderAddr[i] != oldAddr) encoders[i].ok = false;
-        configComplete &= getJsonValue(top[String("rot") + i], rotateAction[i], DEFAULT_ROTATE_ACTION[i]);
-        configComplete &= getJsonValue(top[String("sp") + i], shortPressAction[i], (uint8_t)PRESS_NONE);
-        configComplete &= getJsonValue(top[String("lp") + i], longPressAction[i], (uint8_t)PRESS_ANIM_NEXT);
-        configComplete &= getJsonValue(top[String("st") + i], stepSize[i], (uint8_t)DEFAULT_STEP);
+        configComplete &= getJsonValue(enc["rot"], rotateAction[i], DEFAULT_ROTATE_ACTION[i]);
+        configComplete &= getJsonValue(enc["sp"], shortPressAction[i], (uint8_t)PRESS_NONE);
+        configComplete &= getJsonValue(enc["lp"], longPressAction[i], (uint8_t)PRESS_ANIM_NEXT);
+        configComplete &= getJsonValue(enc["st"], stepSize[i], (uint8_t)DEFAULT_STEP);
         stepSize[i] = constrain(stepSize[i], 1, MAX_STEP);
       }
 
+      JsonObject leds = top["leds"];
+      configComplete &= getJsonValue(leds["mode"], ledMode, (uint8_t)LED_PALETTE);
+      configComplete &= getJsonValue(leds["bri"], ledBriPct, (uint8_t)DEFAULT_LED_BRI_PCT);
+      configComplete &= getJsonValue(leds["power"], ledFollowPower, true);
+
+      JsonObject favs = top["favorites"];
       for (uint8_t i = 0; i < MAX_FAVORITES; i++) {
-        configComplete &= getJsonValue(top["fav"][i], favoritePresets[i], (uint8_t)0);
+        configComplete &= getJsonValue(favs["preset"][i], favoritePresets[i], (uint8_t)0);
       }
 
-      configComplete &= getJsonValue(top["led_mode"], ledMode, (uint8_t)LED_PALETTE);
-      configComplete &= getJsonValue(top["led_bri"], ledBriPct, (uint8_t)DEFAULT_LED_BRI_PCT);
-      configComplete &= getJsonValue(top["led_power"], ledFollowPower, true);
       if (ledBriPct > 100) ledBriPct = 100;
       invalidateLeds(); // push new LED settings on the next refresh
 
@@ -197,28 +204,17 @@ class SeesawEncoderControlUsermod : public Usermod {
       return configComplete;
     }
 
-    // Builds the per-pin labels, the address labels for each encoder, the
-    // rotate/short-press/long-press dropdown trio for each encoder, and the
-    // encoder LED settings. Encoders not detected right now are greyed out.
+    // Builds the settings page: I2C pin labels, then one titled section per
+    // encoder ("Encoder - 1" ...), the encoder LED section, and the
+    // favorites section last. Encoders not detected right now are greyed out.
     void appendConfigData(Print& s) override {
       printPinLabel(s, 0, "SDA (I2C)");
       printPinLabel(s, 1, "SCL (I2C)");
 
-      for (uint8_t i = 0; i < ENCODER_COUNT; i++) {
-        s.print(F("addInfo('")); s.print(FPSTR(_name)); s.print(F(":addr[]',")); s.print(i);
-        s.print(F(",'Encoder ")); s.print(i + 1); s.print(F(" I2C addr (0x36-0x3A)"));
-        s.print(encoders[i].ok ? F(" - detected');") : F(" - not detected');"));
-      }
-
-      printSharedOptionListsJs(s);
-      for (uint8_t i = 0; i < ENCODER_COUNT; i++) printEncoderDropdowns(s, i);
-
-      for (uint8_t i = 0; i < MAX_FAVORITES; i++) {
-        s.print(F("addInfo('")); s.print(FPSTR(_name)); s.print(F(":fav[]',")); s.print(i);
-        s.print(F(",'Anim ")); s.print(i + 1); s.print(F(" (preset #)');"));
-      }
-
-      printLedSettingsJs(s);
+      printSharedJs(s);
+      for (uint8_t i = 0; i < ENCODER_COUNT; i++) printEncoderSection(s, i);
+      printLedSectionJs(s);
+      printFavoritesSectionJs(s);
     }
 
   private:
@@ -299,7 +295,7 @@ class SeesawEncoderControlUsermod : public Usermod {
 
     // Favorites: a short list of WLED Preset numbers (1-250; 0 = unused
     // slot), configured on the settings page below the encoder grid.
-    static const uint8_t MAX_FAVORITES = 8;
+    static const uint8_t MAX_FAVORITES = 13;
     uint8_t favoritePresets[MAX_FAVORITES] = {0};
     int8_t lastFavoriteIndex = -1;
 
@@ -621,94 +617,104 @@ class SeesawEncoderControlUsermod : public Usermod {
       s.print(F(",'")); s.print(label); s.print(F("');"));
     }
 
-    // Declares the rotate/press option lists and the label-rewrite/row-join
-    // helpers once, shared by all 5 encoders below. WLED auto-generates a
-    // raw-field-name text label before every non-array field (e.g. "rot0")
-    // -- rewrite that text node in place instead of appending a second
-    // label alongside it -- and ends every field's row with a literal
-    // <br> -- remove the ones between the three dropdowns so they render
-    // on one row (both fixes ported from ADS1115_dual_control's
-    // _adsSetLabel/_adsJoinRow).
+    // Declares the option lists and DOM helpers once, shared by all
+    // sections below.
     //
-    // _encMarkMissing greys out an undetected encoder's row. It only dims
-    // the controls (doesn't set .disabled): the settings form is a plain
-    // POST, and disabled fields aren't submitted, which would reset that
-    // encoder's saved settings to defaults on every save.
-    void printSharedOptionListsJs(Print& s) {
+    // _encSetLabel: WLED auto-generates a raw-field-name text label before
+    // every field (e.g. "Rot") -- rewrite that text node in place instead of
+    // appending a second label (ported from ADS1115_dual_control).
+    // _encTitle: renames a section heading (the <p><u>..</u></p> WLED draws
+    // for each nested config object) by walking back from one of its fields.
+    // _encDim greys out an undetected encoder's controls. It only dims them
+    // (doesn't set .disabled): the settings form is a plain POST, and
+    // disabled fields aren't submitted, which would reset that encoder's
+    // saved settings to defaults on every save.
+    void printSharedJs(Print& s) {
       s.print(F(
         "var _encRotOpts=[['Off',0],['Dimmer',1],['Spd',2],['Int',3],"
         "['Palette',4],['Pri Hue',5],['Sec Hue',6],['White',7]];"
         "var _encPressOpts=[['None',0],['Anim Next',1],['Anim Prev',2],"
         "['Palette Next',3],['Palette Prev',4],['On/Off',5]];"
-        "function _encSetLabel(sel,text){"
-          "var n=sel.previousSibling;"
+        "var _encAddrOpts=[['0x36 (no jumpers)',54],['0x37 (A0)',55],['0x38 (A1)',56],"
+        "['0x39 (A0+A1)',57],['0x3A (A2)',58]];"
+        "function _encSetLabel(el,text){"
+          "var n=el.previousSibling;"
           "while(n){if(n.nodeType===3){n.nodeValue=text;return;}n=n.previousSibling;}"
-        "}"
-        "function _encJoinRow(sel){"
-          "var n=sel.nextSibling;"
-          "while(n){if(n.nodeName==='BR'){n.parentNode.removeChild(n);return;}n=n.nextSibling;}"
-        "}"
-        "function _encFillOpts(sel,opts){"
-          "for(var i=0;i<opts.length;i++)addOption(sel,opts[i][0],opts[i][1]);"
         "}"
         "function _encNote(el,text){"
           "var t=document.createElement('span');t.textContent=text;"
           "t.style.cssText='opacity:.6;font-style:italic';"
           "el.parentNode.insertBefore(t,el.nextSibling);"
         "}"
-        "function _encMarkMissing(els){"
-          "for(var i=0;i<els.length;i++)els[i].style.opacity='.4';"
-          "_encNote(els[els.length-1],' not detected');"
+        "function _encTitle(el,text,note){"
+          "var n=el;while(n&&n.nodeName!=='P')n=n.previousSibling;"
+          "if(!n)return;n.firstChild.textContent=text;"
+          "if(note)_encNote(n.firstChild,note);"
         "}"
+        "function _encDim(els){for(var i=0;i<els.length;i++)if(els[i])els[i].style.opacity='.4';}"
         "function _encInput(fld){"
           "var a=document.getElementsByName('SeesawEncoderControl:'+fld);"
           "for(var i=0;i<a.length;i++)if(a[i].type!=='hidden')return a[i];"
           "return null;"
         "}"
+        "function _encDD(fld,label,opts){"
+          "var d=addDropdown('SeesawEncoderControl',fld);if(!d)return null;"
+          "_encSetLabel(d,label);for(var i=0;i<opts.length;i++)addOption(d,opts[i][0],opts[i][1]);"
+          "return d;"
+        "}"
       ));
     }
 
-    // Rotate + short-press + long-press dropdowns plus step size for one
-    // encoder, on one row reading "Enc1 [Rotate v] [Short v] [Long v] Step [8]".
-    void printEncoderDropdowns(Print& s, uint8_t idx) {
-      s.print(F("(function(){"));
-      s.print(F("var r=addDropdown('")); s.print(FPSTR(_name));
-      s.print(F("','rot")); s.print(idx); s.print(F("');"));
-      s.print(F("_encSetLabel(r,'Enc")); s.print(idx + 1); s.print(F(" ');"));
-      s.print(F("_encJoinRow(r);"));
-      s.print(F("_encFillOpts(r,_encRotOpts);"));
-
-      s.print(F("var sp=addDropdown('")); s.print(FPSTR(_name));
-      s.print(F("','sp")); s.print(idx); s.print(F("');"));
-      s.print(F("_encSetLabel(sp,'');"));
-      s.print(F("_encJoinRow(sp);"));
-      s.print(F("_encFillOpts(sp,_encPressOpts);"));
-
-      s.print(F("var lp=addDropdown('")); s.print(FPSTR(_name));
-      s.print(F("','lp")); s.print(idx); s.print(F("');"));
-      s.print(F("_encSetLabel(lp,'');"));
-      s.print(F("_encJoinRow(lp);"));
-      s.print(F("_encFillOpts(lp,_encPressOpts);"));
-
-      s.print(F("var st=_encInput('st")); s.print(idx); s.print(F("');"));
-      s.print(F("if(st){_encSetLabel(st,' Step ');st.min=1;st.max=")); s.print(MAX_STEP);
-      s.print(F(";st.step=1;st.style.width='4em';}"));
-      if (!encoders[idx].ok) s.print(F("_encMarkMissing(st?[r,sp,lp,st]:[r,sp,lp]);"));
+    // One section per encoder:
+    //   Encoder - 1            (+ "not detected" note, controls dimmed)
+    //   I2C address [0x36 (no jumpers) v]
+    //   Rotate [v]  Short press [v]  Long press [v]  (one per line)
+    //   Step [8] (change per click)
+    void printEncoderSection(Print& s, uint8_t idx) {
+      s.print(F("(function(){var k='enc")); s.print(idx + 1); s.print(F(":';"));
+      s.print(F(
+        "var a=_encDD(k+'addr','I2C address ',_encAddrOpts);"
+        "var r=_encDD(k+'rot','Rotate ',_encRotOpts);"
+        "var sp=_encDD(k+'sp','Short press ',_encPressOpts);"
+        "var lp=_encDD(k+'lp','Long press ',_encPressOpts);"
+        "var st=_encInput(k+'st');"
+        "if(st){_encSetLabel(st,'Step ');st.min=1;st.step=1;st.style.width='5em';"
+      ));
+      s.print(F("st.max=")); s.print(MAX_STEP);
+      s.print(F(";_encNote(st,' change per click (1-")); s.print(MAX_STEP); s.print(F(")');}"));
+      s.print(F("if(a)_encTitle(a,'Encoder - ")); s.print(idx + 1); s.print(F("'"));
+      if (!encoders[idx].ok) {
+        s.print(F(",' not detected');_encDim([a,r,sp,lp,st]);"));
+      } else {
+        s.print(F(",' detected');"));
+      }
       s.print(F("})();"));
     }
 
-    // Encoder LED settings: mode dropdown, brightness %, follow-power checkbox.
-    void printLedSettingsJs(Print& s) {
+    // Encoder LED section: mode dropdown, brightness %, follow-power checkbox.
+    void printLedSectionJs(Print& s) {
       s.print(F(
         "(function(){"
-          "var m=addDropdown('SeesawEncoderControl','led_mode');"
-          "if(m){_encSetLabel(m,'Encoder LEDs ');"
-            "addOption(m,'Off',0);addOption(m,'Palette gradient',1);}"
-          "var b=_encInput('led_bri');"
-          "if(b){_encSetLabel(b,'LED brightness (%) ');b.min=0;b.max=100;b.step=1;}"
-          "var p=_encInput('led_power');"
-          "if(p){_encSetLabel(p,'LEDs follow strip power ');"
+          "var m=_encDD('leds:mode','Mode ',[['Off',0],['Palette gradient',1]]);"
+          "if(m)_encTitle(m,'Encoder LEDs');"
+          "var b=_encInput('leds:bri');"
+          "if(b){_encSetLabel(b,'Brightness (%) ');b.min=0;b.max=100;b.step=1;b.style.width='5em';}"
+          "var p=_encInput('leds:power');"
+          "if(p){_encSetLabel(p,'Follow strip power ');"
             "_encNote(p,' (first encoder stays on at 20% when the strip is off)');}"
+        "})();"
+      ));
+    }
+
+    // Favorites section (last on the page): numbered preset slots.
+    void printFavoritesSectionJs(Print& s) {
+      s.print(F(
+        "(function(){"
+          "var a=document.getElementsByName('SeesawEncoderControl:favorites:preset[]');"
+          "for(var i=0;i<a.length;i++){"
+            "_encSetLabel(a[i],'Anim '+(i+1)+' ');a[i].min=0;a[i].max=250;a[i].step=1;a[i].style.width='5em';"
+          "}"
+          "if(a.length)_encTitle(a[0],'Favorites',' WLED preset numbers for Anim Next/Prev, 0 = unused');"
         "})();"
       ));
     }
