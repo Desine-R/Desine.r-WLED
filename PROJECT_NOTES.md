@@ -153,7 +153,9 @@ _Last updated 2026-10-11._
 - [ ] Not yet retested with ADS1115 boards wired on the Dig-Uno
 
 **Project housekeeping**
-- [ ] Put this project in git with a private remote (planned)
+- [x] In git: private repo https://github.com/LotusConsume/Desine.r-WLED, branch
+  `desine` (2026-10-11). Remote `upstream` = wled/WLED for pulling WLED updates.
+  New machine: `git clone -b desine https://github.com/LotusConsume/Desine.r-WLED.git`
 - [ ] Move PlatformIO build output (`.pio/`) out of Google Drive (planned)
 - [ ] Audioreactive / analog mic config pending mic wiring decision
 - [ ] Remove `-D WLED_DEBUG` from the ADS1115 env once no longer needed
