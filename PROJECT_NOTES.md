@@ -1,4 +1,6 @@
-# Desine LLC — WLED Custom Firmware Project Notes
+# Desine.Cntrl — Project Notes
+
+Desine.Cntrl is Desine LLC's custom WLED firmware for rotary-encoder control.
 
 This is the single source of truth for this project. It's meant to be read by
 humans and by any AI coding assistant (Claude, Copilot, Cursor, Codex, ...).
@@ -21,7 +23,7 @@ build environment — only one is compiled into any given firmware:
 
 | Usermod | Hardware | Build env | Status |
 |---|---|---|---|
-| [Seesaw_encoder_control](usermods/Seesaw_encoder_control/readme.md) | 5× Adafruit I2C QT Rotary Encoders | `custom_esp32_diguno_encoders` | **Current client direction.** Flashed, encoder 1 confirmed on hardware |
+| [Desine.Cntrl](usermods/Desine.Cntrl/readme.md) | 5× Adafruit I2C QT Rotary Encoders | `desine_cntrl` | **Current client direction.** Flashed, encoder 1 confirmed on hardware |
 | [ADS1115_dual_control](usermods/ADS1115_dual_control/readme.md) | 2× ADS1115 ADCs (8 pots/buttons) + 2 buttons | `custom_esp32_diguno_ads1115` | Earlier design, kept available. Flashed, boots clean |
 
 The client pivoted from pots (ADS1115) to rotary encoders. The ADS1115 build is
@@ -72,10 +74,10 @@ npm ci
 npm run build
 
 # build
-& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run -e custom_esp32_diguno_encoders
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run -e desine_cntrl
 
 # build + flash (check Device Manager for the COM port)
-& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run -e custom_esp32_diguno_encoders -t upload --upload-port COM6
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run -e desine_cntrl -t upload --upload-port COM6
 
 # serial boot log
 & "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" device monitor -p COM6 -b 115200
@@ -83,7 +85,15 @@ npm run build
 
 Build envs are defined in `platformio_override.ini` (note: upstream WLED's
 `.gitignore` excludes this file — make sure it's version-controlled anyway).
-`default_envs` currently points at the ADS1115 build; pass `-e` explicitly.
+`default_envs` is `desine_cntrl`, so a plain build/upload makes the encoder
+firmware; pass `-e custom_esp32_diguno_ads1115` for the pot build.
+
+**Client-facing names** (build flags in the `desine_cntrl` env): device name
+`Desine.Cntrl` (`SERVERNAME`), setup hotspot `Desine.Cntrl-AP` (`WLED_AP_SSID`),
+firmware file `WLED_16.0.1_Desine.Cntrl.bin` (`WLED_RELEASE_NAME`). Wi-Fi (OTA)
+updates are rejected unless the release name matches the running firmware, so
+keep it `Desine.Cntrl`. A board still running an older build needs a USB flash
+or "Ignore firmware validation" ticked once on the update page.
 
 **When to erase flash first:** only if a usermod's saved config values change
 meaning (e.g. enum values renumbered). Otherwise new config keys just fall back
@@ -162,6 +172,10 @@ _Last updated 2026-10-11._
   Config keys changed (nested `enc1`..`enc5` / `leds` / `favorites` / `i2c` objects), so
   settings saved by older builds revert to defaults once. Page layout verified
   in a browser mockup built from WLED's own settings_um.htm functions.
+- [x] Renamed to **Desine.Cntrl** (2026-10-11): usermod folder `usermods/Desine.Cntrl`,
+  settings-page section header, env `desine_cntrl` (now the default env), device
+  name, setup hotspot, firmware file name. Config key changed to `Desine.Cntrl`,
+  so settings saved under `SeesawEncoderControl` revert to defaults once.
 - [ ] Test the above on hardware: LED colors/order, hot-plug, settings page on the device
 
 **ADS1115**

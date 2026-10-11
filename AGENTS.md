@@ -1,6 +1,6 @@
 > **Desine LLC project fork:** before doing anything, read [PROJECT_NOTES.md](PROJECT_NOTES.md)
 > — hardware, build commands, solved pitfalls, and current status for our custom usermods
-> (`usermods/Seesaw_encoder_control/`, `usermods/ADS1115_dual_control/`). Keep it updated
+> (`usermods/Desine.Cntrl/`, `usermods/ADS1115_dual_control/`). Keep it updated
 > when decisions are made or status changes. Everything below this note is upstream WLED's file.
 
 # AGENTS.md — WLED AI Coding Agent & AI Code Review Reference

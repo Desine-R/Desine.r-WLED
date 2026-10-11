@@ -6,7 +6,7 @@
 
 // AI: this usermod was generated with AI assistance (Claude), see PROJECT_NOTES.md
 // ---------------------------------------------------------------------------
-// Seesaw Rotary Encoder Control usermod
+// Desine.Cntrl usermod -- Seesaw rotary encoder control
 //
 // Reads up to 5 Adafruit I2C QT Rotary Encoder breakouts (Seesaw-based,
 // STEMMA QT chainable, solder-jumper addressed 0x36-0x3A) on one shared I2C
@@ -80,7 +80,7 @@
 #define LED_OFF_DIM_PCT        20  // first encoder's LED level while the strip is off
 #define DEFAULT_LED_BRI_PCT    50
 
-class SeesawEncoderControlUsermod : public Usermod {
+class DesineCntrlUsermod : public Usermod {
   public:
     void setup() override {
       allocateAndBegin();
@@ -318,7 +318,7 @@ class SeesawEncoderControlUsermod : public Usermod {
       if (!PinManager::allocateMultiplePins(i2cPins, 2, PinOwner::HW_I2C, true)) pinsValid = false;
 
       if (!pinsValid) {
-        Serial.println(F("[SeesawEncoderControl] configured I2C pins are already in use -- usermod disabled"));
+        Serial.println(F("[Desine.Cntrl] configured I2C pins are already in use -- usermod disabled"));
         return;
       }
 
@@ -326,24 +326,24 @@ class SeesawEncoderControlUsermod : public Usermod {
 
       // Full I2C bus scan at boot -- useful ongoing diagnostic for hardware
       // bring-up (confirms addresses actually present on the wire).
-      Serial.println(F("[SeesawEncoderControl] scanning I2C bus..."));
+      Serial.println(F("[Desine.Cntrl] scanning I2C bus..."));
       uint8_t foundCount = 0;
       for (uint8_t addr = 1; addr < 127; addr++) {
         if (i2cPresent(addr)) {
-          Serial.print(F("[SeesawEncoderControl] found device at 0x"));
+          Serial.print(F("[Desine.Cntrl] found device at 0x"));
           Serial.println(addr, HEX);
           foundCount++;
         }
       }
-      if (foundCount == 0) Serial.println(F("[SeesawEncoderControl] scan complete -- no devices found on the bus"));
-      else { Serial.print(F("[SeesawEncoderControl] scan complete -- ")); Serial.print(foundCount); Serial.println(F(" device(s) found")); }
+      if (foundCount == 0) Serial.println(F("[Desine.Cntrl] scan complete -- no devices found on the bus"));
+      else { Serial.print(F("[Desine.Cntrl] scan complete -- ")); Serial.print(foundCount); Serial.println(F(" device(s) found")); }
 
       for (uint8_t i = 0; i < ENCODER_COUNT; i++) {
         // only call begin() on addresses that answer: begin() retries with
         // delays and blocks ~100ms when nothing is there
         if (i2cPresent(encoderAddr[i])) initEncoder(i);
         if (!encoders[i].ok) {
-          Serial.print(F("[SeesawEncoderControl] encoder ")); Serial.print(i); Serial.println(F(" not found"));
+          Serial.print(F("[Desine.Cntrl] encoder ")); Serial.print(i); Serial.println(F(" not found"));
         }
       }
       lastRescan = millis();
@@ -366,7 +366,7 @@ class SeesawEncoderControlUsermod : public Usermod {
       e.buttonDebounced = HIGH;
       e.longFired = false;
       invalidateLeds(); // detected count changed, so every LED's palette position may shift
-      Serial.print(F("[SeesawEncoderControl] encoder ")); Serial.print(i); Serial.println(F(" ready"));
+      Serial.print(F("[Desine.Cntrl] encoder ")); Serial.print(i); Serial.println(F(" ready"));
     }
 
     // Hot-plug support: re-initializes encoders that have appeared and
@@ -379,7 +379,7 @@ class SeesawEncoderControlUsermod : public Usermod {
           encoders[i].ok = false;
           encoders[i].haveLastPosition = false;
           invalidateLeds();
-          Serial.print(F("[SeesawEncoderControl] encoder ")); Serial.print(i); Serial.println(F(" disconnected"));
+          Serial.print(F("[Desine.Cntrl] encoder ")); Serial.print(i); Serial.println(F(" disconnected"));
         } else if (!encoders[i].ok && present) {
           initEncoder(i);
         }
@@ -621,7 +621,7 @@ class SeesawEncoderControlUsermod : public Usermod {
     void printPinSectionJs(Print& s) {
       s.print(F(
         "(function(){"
-          "var a=document.getElementsByName('SeesawEncoderControl:i2c:pin[]');"
+          "var a=document.getElementsByName('Desine.Cntrl:i2c:pin[]');"
           "if(!a.length)return;"
           "_encSetLabel(a[0],'SDA ');if(a[1])_encSetLabel(a[1],'SCL ');"
           "_encTitle(a[0],'I2C Pins (advanced)',' only change if the encoders are rewired; the device reboots');"
@@ -665,12 +665,12 @@ class SeesawEncoderControlUsermod : public Usermod {
         "}"
         "function _encDim(els){for(var i=0;i<els.length;i++)if(els[i])els[i].style.opacity='.4';}"
         "function _encInput(fld){"
-          "var a=document.getElementsByName('SeesawEncoderControl:'+fld);"
+          "var a=document.getElementsByName('Desine.Cntrl:'+fld);"
           "for(var i=0;i<a.length;i++)if(a[i].type!=='hidden')return a[i];"
           "return null;"
         "}"
         "function _encDD(fld,label,opts){"
-          "var d=addDropdown('SeesawEncoderControl',fld);if(!d)return null;"
+          "var d=addDropdown('Desine.Cntrl',fld);if(!d)return null;"
           "_encSetLabel(d,label);for(var i=0;i<opts.length;i++)addOption(d,opts[i][0],opts[i][1]);"
           "return d;"
         "}"
@@ -722,7 +722,7 @@ class SeesawEncoderControlUsermod : public Usermod {
     void printFavoritesSectionJs(Print& s) {
       s.print(F(
         "(function(){"
-          "var a=document.getElementsByName('SeesawEncoderControl:favorites:preset[]');"
+          "var a=document.getElementsByName('Desine.Cntrl:favorites:preset[]');"
           "for(var i=0;i<a.length;i++){"
             "_encSetLabel(a[i],'Anim '+(i+1)+' ');a[i].min=0;a[i].max=250;a[i].step=1;a[i].style.width='5em';"
           "}"
@@ -732,16 +732,16 @@ class SeesawEncoderControlUsermod : public Usermod {
     }
 };
 
-const char SeesawEncoderControlUsermod::_name[] PROGMEM = "SeesawEncoderControl";
-const uint8_t SeesawEncoderControlUsermod::DEFAULT_ENCODER_ADDR[SeesawEncoderControlUsermod::ENCODER_COUNT] = {
+const char DesineCntrlUsermod::_name[] PROGMEM = "Desine.Cntrl";
+const uint8_t DesineCntrlUsermod::DEFAULT_ENCODER_ADDR[DesineCntrlUsermod::ENCODER_COUNT] = {
   BASE_ENCODER_ADDR, BASE_ENCODER_ADDR + 1, BASE_ENCODER_ADDR + 2,
   BASE_ENCODER_ADDR + 3, BASE_ENCODER_ADDR + 4
 };
-const uint8_t SeesawEncoderControlUsermod::DEFAULT_ROTATE_ACTION[SeesawEncoderControlUsermod::ENCODER_COUNT] = {
-  SeesawEncoderControlUsermod::ROT_BRI, SeesawEncoderControlUsermod::ROT_SPEED,
-  SeesawEncoderControlUsermod::ROT_INTENSITY, SeesawEncoderControlUsermod::ROT_HUE1,
-  SeesawEncoderControlUsermod::ROT_HUE2
+const uint8_t DesineCntrlUsermod::DEFAULT_ROTATE_ACTION[DesineCntrlUsermod::ENCODER_COUNT] = {
+  DesineCntrlUsermod::ROT_BRI, DesineCntrlUsermod::ROT_SPEED,
+  DesineCntrlUsermod::ROT_INTENSITY, DesineCntrlUsermod::ROT_HUE1,
+  DesineCntrlUsermod::ROT_HUE2
 };
 
-static SeesawEncoderControlUsermod seesaw_encoder_control;
-REGISTER_USERMOD(seesaw_encoder_control);
+static DesineCntrlUsermod desine_cntrl;
+REGISTER_USERMOD(desine_cntrl);

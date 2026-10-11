@@ -1,6 +1,6 @@
-# Seesaw Encoder Control
+# Desine.Cntrl
 
-Controls WLED with up to 5 [Adafruit I2C QT Rotary Encoder](https://www.adafruit.com/product/4991)
+Desine LLC's encoder control usermod. Controls WLED with up to 5 [Adafruit I2C QT Rotary Encoder](https://www.adafruit.com/product/4991)
 breakouts (Seesaw-based) on one shared I2C bus. Each encoder's knob and its
 built-in pushbutton are configured independently from the WLED settings page.
 
@@ -69,8 +69,8 @@ segments, they show the palette of the last segment drawn.
 
 ## Build
 
-Add `Seesaw_encoder_control` to `custom_usermods` in `platformio_override.ini`
-(see the `custom_esp32_diguno_encoders` env). No other code changes are needed.
+Add `Desine.Cntrl` to `custom_usermods` in `platformio_override.ini`
+(see the `desine_cntrl` env). No other code changes are needed.
 Dependencies (Adafruit seesaw, BusIO, SPI) are declared in `library.json`.
 
 ## Troubleshooting
