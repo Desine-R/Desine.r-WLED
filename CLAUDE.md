@@ -1,0 +1,2 @@
+@AGENTS.md
+@PROJECT_NOTES.md

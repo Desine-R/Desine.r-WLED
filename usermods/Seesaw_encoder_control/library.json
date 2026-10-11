@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "adafruit/Adafruit seesaw Library": "^1.7.7",
+    "adafruit/Adafruit BusIO": "^1.16.1",
+    "SPI": "*"
+  },
+  "build": {
+    "libArchive": false
+  }
+}

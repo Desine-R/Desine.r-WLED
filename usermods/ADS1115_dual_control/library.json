@@ -1,0 +1,13 @@
+{
+  "name": "ADS1115_dual_control",
+  "version": "1.0.0",
+  "description": "Dual ADS1115 potentiometer control (brightness, speed, intensity, palette, dual hue) plus two-button effect cycling for WLED.",
+  "dependencies": {
+    "adafruit/Adafruit ADS1X15": "^2.4.0",
+    "adafruit/Adafruit BusIO": "^1.16.1",
+    "SPI": "*"
+  },
+  "build": {
+    "libArchive": false
+  }
+}
