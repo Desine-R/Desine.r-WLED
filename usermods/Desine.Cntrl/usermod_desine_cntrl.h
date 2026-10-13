@@ -8,14 +8,14 @@
 // ---------------------------------------------------------------------------
 // Desine.Cntrl usermod -- Seesaw rotary encoder control
 //
-// Reads up to 5 Adafruit I2C QT Rotary Encoder breakouts (Seesaw-based,
-// STEMMA QT chainable, solder-jumper addressed 0x36-0x3A) on one shared I2C
+// Reads up to 8 Adafruit I2C QT Rotary Encoder breakouts (Seesaw-based,
+// STEMMA QT chainable, solder-jumper addressed 0x36-0x3D) on one shared I2C
 // bus. Each encoder has only its own integrated pushbutton -- no separate
 // physical buttons, unlike the ADS1115 pot usermod this replicates.
 //
-// Every encoder gets three independent dropdowns on the WLED Usermod
-// settings page (Config -> Usermods), all on one row -- "Enc1 [Rotate v]
-// [Short v] [Long v]":
+// Every encoder gets its own section on the WLED Usermod settings page
+// (Config -> Usermods), "Encoder - 1" ... "Encoder - 8", with its I2C
+// address, step size, and three independent actions:
 //
 //   Rotate:      what continuous attribute rotation adjusts (relative to
 //                its live value -- there's no absolute position to map,
@@ -26,7 +26,8 @@
 //                LONG_PRESS_MS is reached -- or None.
 //
 // Short/long press share the same action list: None, Anim Next/Prev,
-// Palette Next/Prev, or toggle power On/Off.
+// Palette Next/Prev, toggle power On/Off, or Palette Mode (switch between
+// custom palettes and the two-color palettes set by the hue knobs).
 //
 // "Anim Next/Prev" steps through a short list of WLED Preset numbers
 // (configured below the encoder grid) -- same favorites-via-Presets idea as
@@ -109,13 +110,13 @@ class DesineCntrlUsermod : public Usermod {
       }
     }
 
-    // Shows "Encoders: N of 5 detected" on WLED's Info page.
+    // Shows "Encoders: N of 8 detected" on WLED's Info page.
     void addToJsonInfo(JsonObject& root) override {
       JsonObject user = root["u"];
       if (user.isNull()) user = root.createNestedObject("u");
       JsonArray info = user.createNestedArray(F("Encoders"));
       info.add(detectedCount());
-      info.add(F(" of 5 detected"));
+      info.add(String(F(" of ")) + ENCODER_COUNT + F(" detected"));
     }
 
     // ---- Usermod settings page ----
@@ -229,11 +230,12 @@ class DesineCntrlUsermod : public Usermod {
     int8_t sdaPin = DEFAULT_SDA_PIN;
     int8_t sclPin = DEFAULT_SCL_PIN;
 
-    static const uint8_t ENCODER_COUNT = 5;
+    // 8 = every address the 3 solder jumpers (A0-A2) can select, 0x36-0x3D
+    static const uint8_t ENCODER_COUNT = 8;
     static const uint8_t DEFAULT_ENCODER_ADDR[ENCODER_COUNT];
     uint8_t encoderAddr[ENCODER_COUNT] = {
-      BASE_ENCODER_ADDR, BASE_ENCODER_ADDR + 1, BASE_ENCODER_ADDR + 2,
-      BASE_ENCODER_ADDR + 3, BASE_ENCODER_ADDR + 4
+      BASE_ENCODER_ADDR, BASE_ENCODER_ADDR + 1, BASE_ENCODER_ADDR + 2, BASE_ENCODER_ADDR + 3,
+      BASE_ENCODER_ADDR + 4, BASE_ENCODER_ADDR + 5, BASE_ENCODER_ADDR + 6, BASE_ENCODER_ADDR + 7
     };
 
     // Rotate action IDs -- what an encoder's rotation continuously adjusts.
@@ -246,24 +248,42 @@ class DesineCntrlUsermod : public Usermod {
     // dropdowns (meaning of shortPressAction[i] / longPressAction[i]).
     enum : uint8_t {
       PRESS_NONE = 0, PRESS_ANIM_NEXT, PRESS_ANIM_PREV,
-      PRESS_PALETTE_NEXT, PRESS_PALETTE_PREV, PRESS_TOGGLE_POWER
+      PRESS_PALETTE_NEXT, PRESS_PALETTE_PREV, PRESS_TOGGLE_POWER,
+      PRESS_PALETTE_MODE
     };
+
+    // Palette sets the Palette knob / Palette Next/Prev step through:
+    //   custom mode: the user's custom palettes only (IDs 200, 199, ...)
+    //   color mode:  WLED's palettes built from the segment's own colors,
+    //                i.e. from the Pri/Sec Hue knobs -- "* Colors 1&2" (3,
+    //                smooth primary->secondary blend) and "* Colors Only"
+    //                (5, solid blocks of each)
+    // The active set is inferred from the current palette, so it survives
+    // reboots and changes made from the web UI. PRESS_PALETTE_MODE switches
+    // between the two.
+    static const uint8_t COLOR_PALETTE_COUNT = 2;
+    static const uint8_t COLOR_PALETTES[COLOR_PALETTE_COUNT];
+    uint8_t lastCustomPalette = 0; // last custom palette used, restored when leaving color mode (0 = none yet)
 
     // Encoder LED mode IDs (global, applies to all encoders).
     enum : uint8_t { LED_OFF = 0, LED_PALETTE };
 
     // Defaults spread rotate across the first 5 attributes so out-of-the-
-    // box each encoder does something different; short press defaults to
-    // doing nothing until explicitly configured, long press defaults to
-    // advancing through favorites.
+    // box each encoder does something different (encoders 6-8 start Off);
+    // short press defaults to doing nothing until explicitly configured,
+    // long press defaults to advancing through favorites.
     static const uint8_t DEFAULT_ROTATE_ACTION[ENCODER_COUNT];
-    uint8_t rotateAction[ENCODER_COUNT] = { ROT_BRI, ROT_SPEED, ROT_INTENSITY, ROT_HUE1, ROT_HUE2 };
-    uint8_t shortPressAction[ENCODER_COUNT] = { PRESS_NONE, PRESS_NONE, PRESS_NONE, PRESS_NONE, PRESS_NONE };
+    uint8_t rotateAction[ENCODER_COUNT] = { ROT_BRI, ROT_SPEED, ROT_INTENSITY, ROT_HUE1, ROT_HUE2, ROT_OFF, ROT_OFF, ROT_OFF };
+    uint8_t shortPressAction[ENCODER_COUNT] = { PRESS_NONE, PRESS_NONE, PRESS_NONE, PRESS_NONE, PRESS_NONE, PRESS_NONE, PRESS_NONE, PRESS_NONE };
     uint8_t longPressAction[ENCODER_COUNT] = {
-      PRESS_ANIM_NEXT, PRESS_ANIM_NEXT, PRESS_ANIM_NEXT, PRESS_ANIM_NEXT, PRESS_ANIM_NEXT
+      PRESS_ANIM_NEXT, PRESS_ANIM_NEXT, PRESS_ANIM_NEXT, PRESS_ANIM_NEXT,
+      PRESS_ANIM_NEXT, PRESS_ANIM_NEXT, PRESS_ANIM_NEXT, PRESS_ANIM_NEXT
     };
     // how much one detent changes a 0-255 attribute (Palette always steps by 1)
-    uint8_t stepSize[ENCODER_COUNT] = { DEFAULT_STEP, DEFAULT_STEP, DEFAULT_STEP, DEFAULT_STEP, DEFAULT_STEP };
+    uint8_t stepSize[ENCODER_COUNT] = {
+      DEFAULT_STEP, DEFAULT_STEP, DEFAULT_STEP, DEFAULT_STEP,
+      DEFAULT_STEP, DEFAULT_STEP, DEFAULT_STEP, DEFAULT_STEP
+    };
 
     uint8_t ledMode = LED_PALETTE;
     uint8_t ledBriPct = DEFAULT_LED_BRI_PCT;
@@ -506,16 +526,9 @@ class DesineCntrlUsermod : public Usermod {
           pendingStateNotify = true;
           break;
         }
-        case ROT_PALETTE: {
-          uint8_t n = getPaletteCount();
-          if (n > 0) {
-            int v = ((int)seg.palette + (int)delta) % (int)n;
-            if (v < 0) v += n;
-            seg.setPalette((uint8_t)v);
-            pendingStateNotify = true;
-          }
+        case ROT_PALETTE:
+          stepPalette(seg, delta);
           break;
-        }
         case ROT_HUE1: {
           int v = (((int)primaryHue + (int)delta * step) % 256 + 256) % 256;
           primaryHue = (uint8_t)v;
@@ -548,21 +561,63 @@ class DesineCntrlUsermod : public Usermod {
           break;
         case PRESS_ANIM_NEXT: advanceFavorite(1); break;
         case PRESS_ANIM_PREV: advanceFavorite(-1); break;
-        case PRESS_PALETTE_NEXT: {
-          uint8_t n = getPaletteCount();
-          if (n > 0) { seg.setPalette((seg.palette + 1) % n); pendingStateNotify = true; }
-          break;
-        }
-        case PRESS_PALETTE_PREV: {
-          uint8_t n = getPaletteCount();
-          if (n > 0) { seg.setPalette((seg.palette + n - 1) % n); pendingStateNotify = true; }
-          break;
-        }
+        case PRESS_PALETTE_NEXT: stepPalette(seg, 1); break;
+        case PRESS_PALETTE_PREV: stepPalette(seg, -1); break;
         case PRESS_TOGGLE_POWER:
           toggleOnOff();
           pendingStateNotify = true;
           break;
+        case PRESS_PALETTE_MODE: togglePaletteMode(seg); break;
       }
+    }
+
+    // Custom palettes are numbered downward from WLED_CUSTOM_PALETTE_ID_BASE
+    // (index 0 = ID 200, index 1 = ID 199, ...), not after the built-in
+    // ones -- see the ID map in wled00/const.h.
+    static bool isCustomPalette(uint8_t id) {
+      int idx = (int)WLED_CUSTOM_PALETTE_ID_BASE - id;
+      return id >= FIXED_PALETTE_COUNT && idx >= 0 && idx < (int)customPalettes.size();
+    }
+
+    static int colorPaletteIndex(uint8_t id) {
+      for (uint8_t i = 0; i < COLOR_PALETTE_COUNT; i++) if (COLOR_PALETTES[i] == id) return i;
+      return -1;
+    }
+
+    // Steps delta palettes within the active set (see COLOR_PALETTES). If
+    // the current palette is in neither set (e.g. a built-in one picked in
+    // the web UI or by a preset), this enters custom mode: forward starts
+    // at the first custom palette, backward at the last. Does nothing if
+    // there are no custom palettes.
+    void stepPalette(Segment& seg, int32_t delta) {
+      int colorIdx = colorPaletteIndex(seg.palette);
+      if (colorIdx >= 0) {
+        int i = ((colorIdx + delta) % COLOR_PALETTE_COUNT + COLOR_PALETTE_COUNT) % COLOR_PALETTE_COUNT;
+        seg.setPalette(COLOR_PALETTES[i]);
+      } else {
+        int n = customPalettes.size();
+        if (n == 0) return;
+        int idx = isCustomPalette(seg.palette) ? (int)WLED_CUSTOM_PALETTE_ID_BASE - seg.palette
+                                               : (delta > 0 ? -1 : 0);
+        idx = ((idx + (int)delta) % n + n) % n;
+        lastCustomPalette = WLED_CUSTOM_PALETTE_ID_BASE - idx;
+        seg.setPalette(lastCustomPalette);
+      }
+      pendingStateNotify = true;
+    }
+
+    // Switches between custom mode and color mode. Leaving custom mode
+    // remembers the custom palette so switching back returns to it.
+    void togglePaletteMode(Segment& seg) {
+      if (colorPaletteIndex(seg.palette) >= 0) {
+        if (customPalettes.empty()) return;
+        uint8_t id = isCustomPalette(lastCustomPalette) ? lastCustomPalette : WLED_CUSTOM_PALETTE_ID_BASE;
+        seg.setPalette(id);
+      } else {
+        if (isCustomPalette(seg.palette)) lastCustomPalette = seg.palette;
+        seg.setPalette(COLOR_PALETTES[0]);
+      }
+      pendingStateNotify = true;
     }
 
     // Recomputes segment color slot 0 (primary) or 1 (secondary) from the
@@ -646,9 +701,10 @@ class DesineCntrlUsermod : public Usermod {
         "var _encRotOpts=[['Off',0],['Dimmer',1],['Spd',2],['Int',3],"
         "['Palette',4],['Pri Hue',5],['Sec Hue',6],['White',7]];"
         "var _encPressOpts=[['None',0],['Anim Next',1],['Anim Prev',2],"
-        "['Palette Next',3],['Palette Prev',4],['On/Off',5]];"
+        "['Palette Next',3],['Palette Prev',4],['On/Off',5],['Palette Mode',6]];"
         "var _encAddrOpts=[['0x36 (no jumpers)',54],['0x37 (A0)',55],['0x38 (A1)',56],"
-        "['0x39 (A0+A1)',57],['0x3A (A2)',58]];"
+        "['0x39 (A0+A1)',57],['0x3A (A2)',58],['0x3B (A0+A2)',59],['0x3C (A1+A2)',60],"
+        "['0x3D (A0+A1+A2)',61]];"
         "function _encSetLabel(el,text){"
           "var n=el.previousSibling;"
           "while(n){if(n.nodeType===3){n.nodeValue=text;return;}n=n.previousSibling;}"
@@ -734,14 +790,17 @@ class DesineCntrlUsermod : public Usermod {
 
 const char DesineCntrlUsermod::_name[] PROGMEM = "Desine.Cntrl";
 const uint8_t DesineCntrlUsermod::DEFAULT_ENCODER_ADDR[DesineCntrlUsermod::ENCODER_COUNT] = {
-  BASE_ENCODER_ADDR, BASE_ENCODER_ADDR + 1, BASE_ENCODER_ADDR + 2,
-  BASE_ENCODER_ADDR + 3, BASE_ENCODER_ADDR + 4
+  BASE_ENCODER_ADDR, BASE_ENCODER_ADDR + 1, BASE_ENCODER_ADDR + 2, BASE_ENCODER_ADDR + 3,
+  BASE_ENCODER_ADDR + 4, BASE_ENCODER_ADDR + 5, BASE_ENCODER_ADDR + 6, BASE_ENCODER_ADDR + 7
 };
 const uint8_t DesineCntrlUsermod::DEFAULT_ROTATE_ACTION[DesineCntrlUsermod::ENCODER_COUNT] = {
   DesineCntrlUsermod::ROT_BRI, DesineCntrlUsermod::ROT_SPEED,
   DesineCntrlUsermod::ROT_INTENSITY, DesineCntrlUsermod::ROT_HUE1,
-  DesineCntrlUsermod::ROT_HUE2
+  DesineCntrlUsermod::ROT_HUE2, DesineCntrlUsermod::ROT_OFF,
+  DesineCntrlUsermod::ROT_OFF, DesineCntrlUsermod::ROT_OFF
 };
+// "* Colors 1&2" and "* Colors Only" -- see wled00/FX_fcn.cpp Segment::loadPalette()
+const uint8_t DesineCntrlUsermod::COLOR_PALETTES[DesineCntrlUsermod::COLOR_PALETTE_COUNT] = { 3, 5 };
 
 static DesineCntrlUsermod desine_cntrl;
 REGISTER_USERMOD(desine_cntrl);

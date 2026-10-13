@@ -115,6 +115,12 @@ to compiled-in defaults and a normal upload is fine.
   Single-pin `allocatePin()` rejects `HW_I2C` and the usermod just says
   "disabled". `PinManager` is a namespace, not an object.
 - `getPaletteCount()` is a free function, not a `strip.` method.
+- **`platformio.exe` "blocked by an Application Control policy"** (Windows 11):
+  Windows Smart App Control blocks unsigned executables, including PlatformIO and
+  the ESP32 compiler. Confirm in Event Viewer → Microsoft-Windows-CodeIntegrity/
+  Operational. Fix: Windows Security → App & browser control → Smart App Control
+  → Off (one-way; can't be re-enabled without a Windows reset). Alternative:
+  build in GitHub Actions and flash via WLED's web update page.
 - **Debugging silent failures:** add `-D WLED_DEBUG` to the env's build_flags,
   reflash, read the serial log — it prints exact pin-allocation failures.
 - **Version mismatch crash-loop:** an old `cfg.json` from a different WLED
@@ -176,7 +182,14 @@ _Last updated 2026-10-11._
   settings-page section header, env `desine_cntrl` (now the default env), device
   name, setup hotspot, firmware file name. Config key changed to `Desine.Cntrl`,
   so settings saved under `SeesawEncoderControl` revert to defaults once.
-- [ ] Test the above on hardware: LED colors/order, hot-plug, settings page on the device
+- [x] Flashed + tested on hardware (2026-10-11/13): renamed build boots, encoders at
+  0x36/0x37 detected; user confirmed settings page, LEDs, and hot-plug working
+- [x] Up to 8 encoders (full jumper range 0x36-0x3D); "Palette Mode" press action
+  switches the palette knob/buttons between custom palettes and the two-color
+  palettes (3 "Colors 1&2", 5 "Colors Only"). Fixed bug: palette cycling assumed
+  palettes were numbered 0..N-1 and never reached custom palettes (IDs 200, 199, ...).
+  Built 2026-10-13, **not yet flashed** (board was unplugged)
+- [ ] Flash and test Palette Mode + 8-encoder settings page on the device
 
 **ADS1115**
 - [ ] One-row "Ch1 [Pot ▾] [Dimmer ▾]" layout fix not yet re-verified in a browser
