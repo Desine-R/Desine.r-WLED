@@ -286,7 +286,8 @@ class DesineCntrlUsermod : public Usermod {
     // Press action IDs -- shared by both short-press and long-press dropdowns.
     enum : uint8_t {
       PRESS_NONE = 0, PRESS_ANIM_NEXT, PRESS_ANIM_PREV,
-      PRESS_PALETTE_NEXT, PRESS_PALETTE_PREV, PRESS_TOGGLE_POWER
+      PRESS_PALETTE_NEXT, PRESS_PALETTE_PREV, PRESS_TOGGLE_POWER,
+      PRESS_ANIM_TOGGLE
     };
 
     // Encoder LED mode IDs (global, applies to all encoders).
@@ -340,6 +341,7 @@ class DesineCntrlUsermod : public Usermod {
     uint8_t secondaryHue = 0;
     uint8_t warmth = 0;
     uint8_t lastCustomPalette = 0; // last custom palette used (0 = none yet)
+    uint8_t savedEffect = FX_MODE_STATIC; // animation to restore after Anim Off/On (Solid = none saved)
 
     // Favorites: a short list of WLED Preset numbers (1-250; 0 = unused
     // slot), configured in the Favorites section of the settings page.
@@ -617,7 +619,23 @@ class DesineCntrlUsermod : public Usermod {
           toggleOnOff();
           pendingStateNotify = true;
           break;
+        case PRESS_ANIM_TOGGLE: toggleAnimation(seg); break;
       }
+    }
+
+    // Anim Off/On: switches to the Solid effect, remembering the running
+    // animation; pressing again restores it. If Solid is already active and
+    // nothing was saved (e.g. Solid picked in the web UI), does nothing.
+    void toggleAnimation(Segment& seg) {
+      if (seg.mode != FX_MODE_STATIC) {
+        savedEffect = seg.mode;
+        seg.setMode(FX_MODE_STATIC);
+      } else if (savedEffect != FX_MODE_STATIC) {
+        seg.setMode(savedEffect);
+      } else {
+        return;
+      }
+      pendingStateNotify = true;
     }
 
     // ---- Color schemes ----
@@ -754,7 +772,7 @@ class DesineCntrlUsermod : public Usermod {
         "var _encRotOpts=[['Off',0],['Dimmer',1],['Spd',2],['Int',3],"
         "['Palette',4],['Pri Hue',5],['Sec Hue',6],['Warm White',7]];"
         "var _encPressOpts=[['None',0],['Anim Next',1],['Anim Prev',2],"
-        "['Palette Next',3],['Palette Prev',4],['On/Off',5]];"
+        "['Palette Next',3],['Palette Prev',4],['On/Off',5],['Anim Off/On',6]];"
         "var _encAddrOpts=[['0x36 (no jumpers)',54],['0x37 (A0)',55],['0x38 (A1)',56],"
         "['0x39 (A0+A1)',57],['0x3A (A2)',58],['0x3B (A0+A2)',59],['0x3C (A1+A2)',60],"
         "['0x3D (A0+A1+A2)',61]];"

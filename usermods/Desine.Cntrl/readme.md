@@ -47,7 +47,7 @@ The device starts in Mode 1 after power-up. The Info page shows the active mode.
 | Control | Options | Behavior |
 |---|---|---|
 | **Rotate** | Off, Dimmer, Spd, Int, Palette, Pri Hue, Sec Hue, Warm White | Each click nudges the value by Step (out of 255). Hue wraps around; others stop at min/max. Palette moves one palette per click. |
-| **Short press** | None, Anim Next, Anim Prev, Palette Next, Palette Prev, On/Off | Fires on release, if released within 0.8 s |
+| **Short press** | None, Anim Next, Anim Prev, Palette Next, Palette Prev, On/Off, Anim Off/On | Fires on release, if released within 0.8 s |
 | **Long press** | same as short press | Fires once while held, at 0.8 s (does not also fire the short press) |
 | **Step** | 1–64 (default 8) | How much one click changes the value, set separately per mode |
 
@@ -72,6 +72,10 @@ With no custom palettes saved, the Palette knob does nothing.
 … "Anim 13" in the Favorites section; 0 = unused). Save your favorite looks as
 regular WLED presets first, then enter their numbers here. A preset can change
 the palette and colors; the next knob turn puts its scheme back in charge.
+
+**Anim Off/On** switches the strip to WLED's Solid effect (no animation) and
+remembers the animation that was running; pressing it again brings that animation
+back. Solid shows the primary color only, not a palette.
 
 Changes affect the first selected segment.
 
