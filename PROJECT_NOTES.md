@@ -189,7 +189,20 @@ _Last updated 2026-10-11._
   palettes (3 "Colors 1&2", 5 "Colors Only"). Fixed bug: palette cycling assumed
   palettes were numbered 0..N-1 and never reached custom palettes (IDs 200, 199, ...).
   Built 2026-10-13, **not yet flashed** (board was unplugged)
-- [ ] Flash and test Palette Mode + 8-encoder settings page on the device
+- [x] Control redesign (2026-10-13, per client direction; supersedes the "Palette
+  Mode" press action above): encoder 1 fixed (rotate = Dimmer, short = switch
+  Mode 1/2, long = On/Off); encoders 2-8 get Mode 1 + Mode 2 action sets, each
+  with its own Step; three exclusive color schemes (custom palette / pri-sec hue /
+  warm white), switched by turning that scheme's knob; "White" rotate option
+  replaced by "Warm White" (warmth); mode switch flashes encoder LEDs (orange =
+  Mode 1, teal = Mode 2). Config keys changed (`m1rot`... per encoder), so saved
+  encoder settings revert to defaults once. Builds clean; settings page verified
+  in the browser mockup. **Not yet flashed.**
+- [ ] Flash and test on the device: mode switching + flash, all three color
+  schemes, warm white tuning by eye (`WARM_AMBER_*` defines)
+- [ ] **Ask the client/user once the encoder count is decided (3 or 5):** how the
+  active mode should be indicated long-term (current placeholder: brief
+  orange/teal flash of all encoder LEDs)
 
 **ADS1115**
 - [ ] One-row "Ch1 [Pot ▾] [Dimmer ▾]" layout fix not yet re-verified in a browser
